@@ -1,7 +1,7 @@
 
 # TAKEOVER
 
-by Martin Grider (http://chesstris.com/)
+by Martin Grider
 
 2-6 players
 
@@ -30,3 +30,7 @@ The game ends when one player has successfully taken over all faces of a single 
 Double-Click a group of blinks while playing or after game over to begin again.
 
 
+## More Info
+
+- Blinks by Move38 - https://www.move38.com/
+- Martin's Blog - http://chesstris.com/

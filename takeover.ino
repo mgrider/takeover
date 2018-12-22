@@ -24,6 +24,7 @@
 // TODO:
 // - oscilate face colors (using a timer?) (faster for greater strength!)
 // - visually show colors from before the game over on button press, maybe?
+// - have something happen on single click of an empty blink. Maybe just a very faint (dim) double tap animation.
 
 
 enum GameState {
