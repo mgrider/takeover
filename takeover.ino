@@ -3,9 +3,10 @@
 //
 // super-simple game, 2-6 players
 //
-// Setup: Everyone starts with X number of blinks with one face in their player color. You may play with
-//        additional empty blinks, or not.
-// 
+// Setup: Everyone starts with X number of blinks with one face in their player color. 
+//        (Double-Click an isolated blink to change its starting color.)
+//        You may play with additional empty blinks, or not.
+//
 // Gameplay: Take turns, and either add or move one of your blinks on the gameboard.
 //           Your color will take over the adjacent faces of any attached blinks if 
 //           a) that face is empty, or
@@ -17,6 +18,8 @@
 // 
 // Game Over: The game ends when one player has successfully taken over all faces of a single blink.
 //
+// Reset:    Double-Click a group of blinks while playing or after game over to begin again.
+//
 
 // TODO:
 // - oscilate face colors (using a timer?) (faster for greater strength!)
@@ -26,7 +29,8 @@
 enum GameState {
   PLAYING,
   GAMEOVER,
-  RESETTING
+  RESETTING,
+  FINISH_RESETTING
 };
 byte currentGameState = PLAYING;
 Timer gameStateTimer;
@@ -78,15 +82,30 @@ byte dataGetPlayer(byte data) {
 
 /// changing game state
 
+void startGame() {
+  currentGameState = PLAYING;
+  FOREACH_FACE(f) {
+    currentFacePlayers[f] = FACESTATE_EMPTY;
+  }
+  setColor(playerColors[0]);
+  gameStateTimer.never();
+  setValueSentOnAllFaces(FACESTATE_EMPTY);
+}
+
 void resetGame() {
   currentGameState = RESETTING;
+  FOREACH_FACE(f) {
+    currentFacePlayers[f] = FACESTATE_EMPTY;
+  }
+  setColor(ORANGE);
   setValueSentOnAllFaces(FACESTATE_RESETTING);
   gameStateTimer.set(400);
 }
 
-void startGame() {
-  currentGameState = PLAYING;
-  gameStateTimer.never();
+void doneResetting() {
+  currentGameState = FINISH_RESETTING;
+  gameStateTimer.set(600);
+  setColor(dim(ORANGE, 100));
   setValueSentOnAllFaces(FACESTATE_EMPTY);
 }
 
@@ -120,30 +139,33 @@ void setup() {
 
 void loop() {
 
-  if (buttonDoubleClicked()) {
-    if(isAlone()) {
-      // player setup (only if nobody is near)
-      doPlayerSetup();
-    }
-    else {
-      // otherwise, we are resetting the game
-      resetGame();
-    }
-  }
-
   if (currentGameState == RESETTING) {
+    if (gameStateTimer.isExpired()) {
+      doneResetting();
+    }
+    return;
+  }
+  else if (currentGameState == FINISH_RESETTING) {
+    // needed to let all our resetting messages expire
     if (gameStateTimer.isExpired()) {
       startGame();
     }
     return;
   }
-  else if (currentGameState == GAMEOVER) {
-    // For now, do nothing but return.
-    // todo: maybe if the button is down, show the colors of this piece (from before game over) here?
-    return;
+  else if (buttonDoubleClicked()) {
+    if(isAlone()) {
+      // player setup (only if nobody is near)
+      doPlayerSetup();
+      return;
+    }
+    else {
+      // otherwise, reset the game
+      resetGame();
+      return;
+    }
   }
 
-  byte data, player, strength;
+  byte data, player, strength, localPlayer;
   // check each face for a takeover
   FOREACH_FACE(f) {
     if (!isValueReceivedOnFaceExpired(f)) { 
@@ -155,7 +177,11 @@ void loop() {
       }
       player = dataGetPlayer(data);
       strength = dataGetStrength(data);
-      if (player > FACESTATE_EMPTY && strength > localStrengthForPlayer(player)) {
+      localPlayer = currentFacePlayers[f];
+      if (player == FACESTATE_EMPTY) {
+        // do nothing
+      }
+      else if (localPlayer == FACESTATE_EMPTY || strength > localStrengthForPlayer(localPlayer)) {
         currentFacePlayers[f] = player;
         if (strength == 6) {
           // game over, man!
@@ -166,7 +192,7 @@ void loop() {
   }
 
   if (currentGameState == GAMEOVER) {
-    // need this again here, because we might have set it in the loop above.
+    // need this here, because we might have set it in the loop above.
     return;
   }
 
