@@ -29,6 +29,8 @@
 
 enum GameState {
   PLAYING,
+  PLAYING_WAITING_FOR_TAKEOVER,
+  PLAYING_WAITING_FOR_POST_TAKEOVER_DELAY,
   GAMEOVER,
   RESETTING,
   FINISH_RESETTING
@@ -48,10 +50,13 @@ const byte FACESTATE_GAMEOVER = 62;
 const byte MAGIC_DATA_MOD_NUMBER = 7;
 
 byte currentFacePlayers[] = { 0,0,0,0,0,0 };
+byte pendingTakeoverFacePlayers[] = { 0,0,0,0,0,0 };
 
 // note that these correspond to FACESTATE/player indexes
 Color playerColors[] = {OFF, RED, BLUE, YELLOW, GREEN, CYAN, MAGENTA};
 
+const int timeForStateReset = 400;
+const int timeForStateTakeover = 500;
 
 /// utility methods
 
@@ -87,6 +92,7 @@ void startGame() {
   currentGameState = PLAYING;
   FOREACH_FACE(f) {
     currentFacePlayers[f] = FACESTATE_EMPTY;
+    pendingTakeoverFacePlayers[f] = FACESTATE_EMPTY;
   }
   setColor(playerColors[0]);
   gameStateTimer.never();
@@ -97,10 +103,11 @@ void resetGame() {
   currentGameState = RESETTING;
   FOREACH_FACE(f) {
     currentFacePlayers[f] = FACESTATE_EMPTY;
+    pendingTakeoverFacePlayers[f] = FACESTATE_EMPTY;
   }
   setColor(ORANGE);
   setValueSentOnAllFaces(FACESTATE_RESETTING);
-  gameStateTimer.set(400);
+  gameStateTimer.set(timeForStateReset);
 }
 
 void doneResetting() {
@@ -153,6 +160,34 @@ void loop() {
     }
     return;
   }
+  else if (currentGameState == PLAYING_WAITING_FOR_POST_TAKEOVER_DELAY) {
+    // This exists because of a race condition in takeovers.
+    // See here for details: https://github.com/mgrider/takeover/issues/1
+    // Basic strategy is when we see a takeover, we go into
+    // state PLAYING_WAITING_FOR_TAKEOVER for 1/2 second, during 
+    // which we keep track of new takeovers.
+    // After the timer expires, we apply all the changes, sending new
+    // player states, but go into state PLAYING_WAITING_FOR_POST_TAKEOVER_DELAY
+    // during which we do not accept new takeovers.
+    // We wait for another 1/2 seconds, then switch back to the normal PLAYING state.
+    if (gameStateTimer.isExpired()) {
+      currentGameState = PLAYING;
+    }
+    else {
+      return;
+    }
+  }
+  else if (currentGameState == PLAYING_WAITING_FOR_TAKEOVER && gameStateTimer.isExpired()) {
+    FOREACH_FACE(f) {
+      if (pendingTakeoverFacePlayers[f] != FACESTATE_EMPTY) {
+        currentFacePlayers[f] = pendingTakeoverFacePlayers[f];
+      }
+      pendingTakeoverFacePlayers[f] = FACESTATE_EMPTY;
+    }
+    currentGameState = PLAYING_WAITING_FOR_POST_TAKEOVER_DELAY;
+    gameStateTimer.set(timeForStateTakeover);
+    return;
+  }
   else if (buttonDoubleClicked()) {
     if(isAlone()) {
       // player setup (only if nobody is near)
@@ -183,7 +218,11 @@ void loop() {
         // do nothing
       }
       else if (localPlayer == FACESTATE_EMPTY || strength > localStrengthForPlayer(localPlayer)) {
-        currentFacePlayers[f] = player;
+        if (currentGameState == PLAYING) {
+          currentGameState = PLAYING_WAITING_FOR_TAKEOVER;
+          gameStateTimer.set(timeForStateTakeover);
+        }
+        pendingTakeoverFacePlayers[f] = player;
         if (strength == 6) {
           // game over, man!
           showGameOverWithPlayer(player);
